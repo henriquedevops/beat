@@ -45,14 +45,29 @@ function timer_row(array $r): array {
         'notes' => $r['notes'],
         'start_time' => $r['start_time'],
         'end_time' => $r['end_time'],
+        'planned_end' => $r['planned_end'],
     ];
 }
 
 const TIMER_COLS = "id, project_id, description, notes,
     to_char(start_time, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS start_time,
-    to_char(end_time, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS end_time";
+    to_char(end_time, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS end_time,
+    to_char(planned_end, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS planned_end";
+
+const POMODORO_DEFAULTS = ['work' => 25, 'short_break' => 5, 'long_break' => 15, 'long_every' => 4, 'sound' => true];
+
+// Pomodoros stop themselves at planned_end, even if no device was open at the time.
+function autostop(int $userId): void {
+    q('UPDATE timers SET end_time = planned_end WHERE user_id = ? AND end_time IS NULL AND planned_end <= now()', [$userId]);
+}
+
+function get_settings(int $userId): array {
+    $saved = json_decode(q('SELECT settings FROM users WHERE id = ?', [$userId])->fetchColumn() ?: '{}', true);
+    return array_merge(POMODORO_DEFAULTS, $saved['pomodoro'] ?? []);
+}
 
 function list_timers(int $userId, ?string $from, ?string $to, array $projectIds = []): array {
+    autostop($userId);
     $sql = 'SELECT ' . TIMER_COLS . ' FROM timers WHERE user_id = ?';
     $p = [$userId];
     if ($from) { $sql .= ' AND start_time >= ?'; $p[] = $from; }
@@ -124,8 +139,10 @@ try {
 
     case 'state':
         $u = require_user();
+        autostop($u['id']);
         out([
             'user' => $u,
+            'pomodoro' => get_settings($u['id']),
             'projects' => list_projects($u['id']),
             'running' => array_map('timer_row', q('SELECT ' . TIMER_COLS . ' FROM timers WHERE user_id = ? AND end_time IS NULL ORDER BY start_time', [$u['id']])->fetchAll()),
         ]);
@@ -137,18 +154,21 @@ try {
 
     case 'timer_start':
         $u = require_user();
-        $id = q("INSERT INTO timers (user_id, project_id, description, start_time) VALUES (?, ?, ?, now()) RETURNING id",
-            [$u['id'], project_id($in['project_id'] ?? null, $u['id']), trim($in['description'] ?? '')])->fetchColumn();
+        $minutes = (int)($in['minutes'] ?? 0);
+        if ($minutes < 0 || $minutes > 240) fail('A pomodoro can be 1 to 240 minutes long.');
+        $id = q("INSERT INTO timers (user_id, project_id, description, start_time, planned_end)
+                 VALUES (?, ?, ?, now(), CASE WHEN ? > 0 THEN now() + make_interval(mins => ?) END) RETURNING id",
+            [$u['id'], project_id($in['project_id'] ?? null, $u['id']), trim($in['description'] ?? ''), $minutes, $minutes])->fetchColumn();
         out(['timer' => get_timer((int)$id, $u['id'])]);
 
     case 'timer_stop':
         $u = require_user();
-        q('UPDATE timers SET end_time = now() WHERE id = ? AND user_id = ? AND end_time IS NULL', [(int)($in['id'] ?? 0), $u['id']]);
+        q('UPDATE timers SET end_time = LEAST(now(), COALESCE(planned_end, now())) WHERE id = ? AND user_id = ? AND end_time IS NULL', [(int)($in['id'] ?? 0), $u['id']]);
         out(['timer' => get_timer((int)($in['id'] ?? 0), $u['id'])]);
 
     case 'timer_stop_all':
         $u = require_user();
-        q('UPDATE timers SET end_time = now() WHERE user_id = ? AND end_time IS NULL', [$u['id']]);
+        q('UPDATE timers SET end_time = LEAST(now(), COALESCE(planned_end, now())) WHERE user_id = ? AND end_time IS NULL', [$u['id']]);
         out(['ok' => true]);
 
     case 'timer_save':
@@ -162,6 +182,8 @@ try {
             get_timer((int)$in['id'], $u['id']);
             q('UPDATE timers SET project_id = ?, description = ?, notes = ?, start_time = ?, end_time = ? WHERE id = ? AND user_id = ?',
                 [...$params, (int)$in['id'], $u['id']]);
+            // A pomodoro reopened after its planned end becomes an ordinary running timer.
+            q('UPDATE timers SET planned_end = NULL WHERE id = ? AND end_time IS NULL AND planned_end <= now()', [(int)$in['id']]);
             $id = (int)$in['id'];
         } else {
             $id = (int)q('INSERT INTO timers (project_id, description, notes, start_time, end_time, user_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id',
@@ -173,6 +195,23 @@ try {
         $u = require_user();
         q('DELETE FROM timers WHERE id = ? AND user_id = ?', [(int)($in['id'] ?? 0), $u['id']]);
         out(['ok' => true]);
+
+    case 'settings_save':
+        $u = require_user();
+        $p = $in['pomodoro'] ?? [];
+        $clean = [
+            'work' => (int)($p['work'] ?? 0),
+            'short_break' => (int)($p['short_break'] ?? 0),
+            'long_break' => (int)($p['long_break'] ?? 0),
+            'long_every' => (int)($p['long_every'] ?? 0),
+            'sound' => !empty($p['sound']),
+        ];
+        if ($clean['work'] < 1 || $clean['work'] > 240) fail('Pomodoro length must be 1 to 240 minutes.');
+        if ($clean['short_break'] < 1 || $clean['short_break'] > 60) fail('Short break must be 1 to 60 minutes.');
+        if ($clean['long_break'] < 1 || $clean['long_break'] > 120) fail('Long break must be 1 to 120 minutes.');
+        if ($clean['long_every'] < 2 || $clean['long_every'] > 12) fail('Take a long break every 2 to 12 pomodoros.');
+        q("UPDATE users SET settings = jsonb_set(settings, '{pomodoro}', ?::jsonb) WHERE id = ?", [json_encode($clean), $u['id']]);
+        out(['pomodoro' => get_settings($u['id'])]);
 
     case 'project_save':
         $u = require_user();

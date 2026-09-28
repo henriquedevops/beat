@@ -3,6 +3,7 @@
 A small self-hosted time tracker. Start timers on your projects from any device and check where your hours went.
 
 - Start and stop timers, and run several at once
+- Pomodoro timer: focus sessions that stop themselves on time, then short and long breaks, with sound and notifications. Lengths are adjustable.
 - Log grouped by day with daily totals; edit, add or delete entries
 - Projects with colours, archiving and renaming
 - Reports by week, month, year or custom range, with hours per project and per day

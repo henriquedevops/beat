@@ -4,6 +4,7 @@ CREATE TABLE users (
   id serial PRIMARY KEY,
   username text UNIQUE NOT NULL,
   password_hash text NOT NULL,
+  settings jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -30,6 +31,7 @@ CREATE TABLE timers (
   notes text NOT NULL DEFAULT '',
   start_time timestamptz NOT NULL,
   end_time timestamptz,
+  planned_end timestamptz, -- set for pomodoros; the timer stops itself at this time
   CHECK (end_time IS NULL OR end_time >= start_time)
 );
 CREATE INDEX timers_user_start ON timers(user_id, start_time DESC);

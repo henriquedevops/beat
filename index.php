@@ -70,8 +70,11 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
     <form id="start-form" class="start">
       <input name="description" placeholder="What are you working on?" aria-label="Description" autocomplete="off">
       <select name="project_id" aria-label="Project"></select>
-      <button class="btn go" type="submit">Start</button>
+      <button class="btn go" type="submit" value="timer">Start</button>
+      <button class="btn tomato" type="submit" value="pomodoro" id="pomo-btn">Pomodoro</button>
     </form>
+    <div id="pomo-count" class="pomo-count" hidden></div>
+    <div id="break"></div>
     <div id="running"></div>
     <div class="log-head">
       <h2>Entries</h2>
@@ -133,19 +136,36 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
 </dialog>
 
 <dialog id="account-dialog">
-  <form method="dialog" id="password-form">
-    <h2>Signed in as <?= htmlspecialchars($user['username']) ?></h2>
-    <h3>Change password</h3>
-    <label>Current password<input type="password" name="current" autocomplete="current-password" required></label>
-    <label>New password<input type="password" name="new" autocomplete="new-password" minlength="8" required></label>
-    <p class="error" role="alert"></p>
-    <div class="dialog-actions">
+  <div class="dialog-body">
+    <div class="dialog-title">
+      <h2>Settings</h2>
+      <span class="muted">Signed in as <?= htmlspecialchars($user['username']) ?></span>
+    </div>
+    <form id="pomo-form">
+      <h3>Pomodoro</h3>
+      <div class="pair">
+        <label>Focus length (minutes)<input type="number" name="work" min="1" max="240" required></label>
+        <label>Long break every<input type="number" name="long_every" min="2" max="12" required></label>
+        <label>Short break (minutes)<input type="number" name="short_break" min="1" max="60" required></label>
+        <label>Long break (minutes)<input type="number" name="long_break" min="1" max="120" required></label>
+      </div>
+      <label class="check"><input type="checkbox" name="sound"> Play a sound when a pomodoro or break ends</label>
+      <p class="error" role="alert"></p>
+      <div class="dialog-actions"><span class="spacer"></span><button type="submit" class="btn primary">Save pomodoro settings</button></div>
+    </form>
+    <form id="password-form">
+      <h3>Change password</h3>
+      <label>Current password<input type="password" name="current" autocomplete="current-password" required></label>
+      <label>New password<input type="password" name="new" autocomplete="new-password" minlength="8" required></label>
+      <p class="error" role="alert"></p>
+      <div class="dialog-actions"><span class="spacer"></span><button type="submit" class="btn primary">Change password</button></div>
+    </form>
+    <div class="dialog-actions dialog-foot">
       <button type="button" class="btn danger-ghost" id="logout">Sign out</button>
       <span class="spacer"></span>
       <button type="button" class="btn ghost" data-close>Close</button>
-      <button type="submit" class="btn primary">Change password</button>
     </div>
-  </form>
+  </div>
 </dialog>
 
 <div id="toast" role="status" aria-live="polite"></div>
