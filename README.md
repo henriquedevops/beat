@@ -50,3 +50,7 @@ Then open `https://your-server/beat/` and sign in.
 - Every request that changes data must include an `X-Beat` header, which blocks cross-site request forgery.
 - Sign-in locks for 15 minutes after 8 failed attempts from the same IP.
 - Files in `lib/` return 404 when requested directly.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
