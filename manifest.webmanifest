@@ -1,0 +1,10 @@
+{
+  "name": "Beat",
+  "short_name": "Beat",
+  "start_url": "/beat/",
+  "scope": "/beat/",
+  "display": "standalone",
+  "background_color": "#eef1f5",
+  "theme_color": "#172440",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
