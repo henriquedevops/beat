@@ -1,7 +1,10 @@
 'use strict';
 
 const $ = (sel, root = document) => root.querySelector(sel);
-const state = { projects: [], running: [], entries: [], logDays: 14, pomodoro: null };
+const state = { projects: [], running: [], entries: [], logDays: 14, pomodoro: null, skew: 0 };
+// Timestamps come from the server's clock; read the current time on that clock so a device
+// whose clock runs behind never shows a negative elapsed time.
+const serverNow = () => Date.now() + state.skew;
 
 // ---------- helpers ----------
 async function api(action, body) {
@@ -45,9 +48,9 @@ function toast(msg) {
 
 const project = (id) => state.projects.find((p) => p.id === id);
 const pad = (n) => String(n).padStart(2, '0');
-const seconds = (t, now = Date.now()) => Math.max(0, ((t.end_time ? Date.parse(t.end_time) : now) - Date.parse(t.start_time)) / 1000);
-function clock(s) { s = Math.floor(s); return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; }
-function hm(s) { const m = Math.round(s / 60); return `${Math.floor(m / 60)}:${pad(m % 60)}`; }
+const seconds = (t, now = serverNow()) => Math.max(0, ((t.end_time ? Date.parse(t.end_time) : now) - Date.parse(t.start_time)) / 1000);
+function clock(s) { s = Math.max(0, Math.floor(s)); return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; }
+function hm(s) { const m = Math.max(0, Math.round(s / 60)); return `${Math.floor(m / 60)}:${pad(m % 60)}`; }
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 const shortDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
@@ -91,7 +94,9 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
 
 // ---------- loading ----------
 async function loadState() {
+  const sent = Date.now();
   const data = await api('state');
+  if (data.now) state.skew = data.now - (sent + Date.now()) / 2;
   state.projects = data.projects;
   state.running = data.running;
   state.pomodoro = data.pomodoro;
@@ -126,7 +131,7 @@ async function refresh() {
 function renderRunning() {
   const box = $('#running');
   box.replaceChildren();
-  const now = Date.now();
+  const now = serverNow();
   for (const t of state.running) {
     const pomo = isPomo(t);
     box.append(el('div', { class: 'run live' + (pomo ? ' pomo' : '') },
@@ -154,7 +159,7 @@ function renderRunning() {
   updateTitle();
 }
 
-function updateTitle(now = Date.now()) {
+function updateTitle(now = serverNow()) {
   const t = state.running[0];
   if (t) document.title = isPomo(t) ? `${clock(remaining(t.planned_end, now))} left · Beat` : `${clock(seconds(t, now))} · Beat`;
   else if (currentBreak) document.title = `Break ${clock(remaining(currentBreak.until, now))} · Beat`;
@@ -163,7 +168,7 @@ function updateTitle(now = Date.now()) {
 
 let lastAutoRefresh = 0;
 function tick() {
-  const now = Date.now();
+  const now = serverNow();
   document.querySelectorAll('.run-clock').forEach((c) => {
     c.textContent = c.dataset.end ? clock(remaining(c.dataset.end, now)) : clock((now - Date.parse(c.dataset.start)) / 1000);
   });
@@ -213,8 +218,8 @@ async function stopAll() {
 // ---------- pomodoro ----------
 const isPomo = (t) => !!t.planned_end;
 const isCompleted = (t) => isPomo(t) && t.end_time === t.planned_end;
-const remaining = (end, now = Date.now()) => Math.max(0, (Date.parse(end) - now) / 1000);
-function pomoProgress(t, now = Date.now()) {
+const remaining = (end, now = serverNow()) => Math.max(0, (Date.parse(end) - now) / 1000);
+function pomoProgress(t, now = serverNow()) {
   const total = Date.parse(t.planned_end) - Date.parse(t.start_time);
   return total > 0 ? Math.min(100, ((now - Date.parse(t.start_time)) / total) * 100) : 100;
 }
@@ -251,7 +256,7 @@ function renderBreak() {
   if (last && !state.running.length && skippedBreak() !== last.id) {
     const { long, minutes } = breakFor(last);
     const until = new Date(Date.parse(last.end_time) + minutes * 60e3).toISOString();
-    const over = Date.parse(until) <= Date.now();
+    const over = Date.parse(until) <= serverNow();
     // Once over, keep showing it only on the device that watched it count down.
     if (!over || (prev && prev.id === last.id && prev.over)) currentBreak = { id: last.id, until, long, over, last };
   }
@@ -449,7 +454,7 @@ async function renderReport() {
     box.append(el('div', { class: 'empty-state' }, el('p', {}, 'No time tracked in this period.')));
     return;
   }
-  const now = Date.now();
+  const now = serverNow();
   const total = timers.reduce((s, t) => s + seconds(t, now), 0);
   const byProject = new Map();
   for (const t of timers) byProject.set(t.project_id, (byProject.get(t.project_id) || 0) + seconds(t, now));
