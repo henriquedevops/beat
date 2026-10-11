@@ -145,6 +145,8 @@ try {
             'pomodoro' => get_settings($u['id']),
             'projects' => list_projects($u['id']),
             'running' => array_map('timer_row', q('SELECT ' . TIMER_COLS . ' FROM timers WHERE user_id = ? AND end_time IS NULL ORDER BY start_time', [$u['id']])->fetchAll()),
+            // The database clock stamps start_time; the client uses this to correct for its own clock skew.
+            'now' => (float)q('SELECT extract(epoch FROM clock_timestamp()) * 1000')->fetchColumn(),
         ]);
 
     case 'timers':
